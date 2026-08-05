@@ -1,4 +1,5 @@
-<!doctype html>
+	const EXTRACTION_PROMPT =
+    <!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
