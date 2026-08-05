@@ -1,3 +1,4 @@
+	const { appendDeal } = require('../lib/sheets');
 # Hampstead Commission Logger
 
 Take a photo of a filled-out, manager-signed commission payout slip; the app reads
