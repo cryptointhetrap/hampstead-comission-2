@@ -1,9 +1,1 @@
-{
-  "name": "hampstead-commission-app",
-  "version": "1.0.0",
-  "private": true,
-  "description": "Photo-to-spreadsheet commission logger for Hampstead Preowned",
-  "dependencies": {
-    "googleapis": "^140.0.1"
-  }
-}
+
