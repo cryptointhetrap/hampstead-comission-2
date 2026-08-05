@@ -1,0 +1,102 @@
+const EXTRACTION_PROMPT = `You are reading a photo of a filled-out "Hampstead Preowned Sales Commission" payout slip for ONE car deal.
+
+The printed form has two columns per line item: "Payout" (a fixed rate, already printed) and "Earned" (blank, filled in by hand with the dollar amount actually earned on THIS deal). Only extract what is HANDWRITTEN — ignore the printed rate column entirely.
+
+Line items on the form, top to bottom: Base, $1295 Cert, $695-$1195 Cert, Increased Cert Over $1295, Financed, Cash Rebate, Anthony's Cars, 1st 14 Days of Syndication, Hold on Trades, then a TOTAL line.
+
+Also read the handwritten header fields: Customer, Delivery Date, Sales Rep, Stock.
+
+Return ONLY a single JSON object, no prose, no markdown fences, matching exactly this shape:
+{
+  "customer": string or null,
+  "deliveryDate": string or null (format as M/D/YYYY if a year is legible, otherwise as written),
+  "stockNumber": string or null,
+  "salesRep": string or null,
+  "base": number or null,
+  "cert1295": number or null,
+  "cert695to1195": number or null,
+  "increasedCertOver1295": number or null,
+  "financed": number or null,
+  "cashRebate": number or null,
+  "anthonysCars": number or null,
+  "first14DaysSyndication": number or null,
+  "holdOnTrades": number or null,
+  "totalHandwritten": number or null
+}
+
+Rules:
+- A line item is null if that row's "Earned" cell is blank or you genuinely cannot read it — do not guess or default to 0.
+- Numbers are dollar amounts only (no "$" sign, no commas) e.g. 125 not "$125.00".
+- "totalHandwritten" is whatever is written on the TOTAL line, if anything — it is NOT something you calculate yourself.
+- If the whole slip looks blank/unfilled (e.g. it's a photo of the empty template), return all fields as null.`;
+
+module.exports = async (req, res) => {
+  if (req.method !== 'POST') {
+    res.status(405).json({ error: 'Method not allowed' });
+    return;
+  }
+
+  const passcode = process.env.APP_PASSCODE;
+  if (passcode && req.body?.passcode !== passcode) {
+    res.status(401).json({ error: 'Wrong passcode' });
+    return;
+  }
+
+  const { imageBase64, mimeType } = req.body || {};
+  if (!imageBase64 || !mimeType) {
+    res.status(400).json({ error: 'Missing imageBase64 or mimeType' });
+    return;
+  }
+
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    res.status(500).json({ error: 'Server missing ANTHROPIC_API_KEY' });
+    return;
+  }
+
+  try {
+    const anthropicRes = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model: 'claude-opus-5',
+        // Thinking is on by default and shares this budget with the response
+        // text, so leave headroom — a tight cap truncates before the JSON.
+        max_tokens: 4096,
+        output_config: { effort: 'medium' },
+        messages: [
+          {
+            role: 'user',
+            content: [
+              { type: 'image', source: { type: 'base64', media_type: mimeType, data: imageBase64 } },
+              { type: 'text', text: EXTRACTION_PROMPT },
+            ],
+          },
+        ],
+      }),
+    });
+
+    if (!anthropicRes.ok) {
+      const errText = await anthropicRes.text();
+      res.status(502).json({ error: 'Vision extraction failed', detail: errText });
+      return;
+    }
+
+    const data = await anthropicRes.json();
+    const text = data?.content?.find((b) => b.type === 'text')?.text || '';
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      res.status(502).json({ error: 'Could not parse a JSON object from the model response', raw: text });
+      return;
+    }
+
+    const fields = JSON.parse(jsonMatch[0]);
+    res.status(200).json({ fields });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};

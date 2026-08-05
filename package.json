@@ -1,0 +1,53 @@
+const { appendDeal } = require('../lib/sheets');
+
+const NUMERIC_FIELDS = [
+  'base', 'cert1295', 'cert695to1195', 'increasedCertOver1295', 'financed',
+  'cashRebate', 'anthonysCars', 'first14DaysSyndication', 'holdOnTrades',
+];
+
+module.exports = async (req, res) => {
+  if (req.method !== 'POST') {
+    res.status(405).json({ error: 'Method not allowed' });
+    return;
+  }
+
+  const passcode = process.env.APP_PASSCODE;
+  if (passcode && req.body?.passcode !== passcode) {
+    res.status(401).json({ error: 'Wrong passcode' });
+    return;
+  }
+
+  const fields = req.body?.fields;
+  if (!fields) {
+    res.status(400).json({ error: 'Missing fields' });
+    return;
+  }
+
+  const totalPayout = NUMERIC_FIELDS.reduce((sum, key) => {
+    const v = Number(fields[key]);
+    return sum + (Number.isFinite(v) ? v : 0);
+  }, 0);
+
+  try {
+    await appendDeal({
+      deliveryDate: fields.deliveryDate,
+      stockNumber: fields.stockNumber,
+      customer: fields.customer,
+      salesRep: fields.salesRep,
+      tradeTitleReceived: fields.tradeTitleReceived,
+      base: fields.base,
+      cert1295: fields.cert1295,
+      cert695to1195: fields.cert695to1195,
+      increasedCertOver1295: fields.increasedCertOver1295,
+      financed: fields.financed,
+      cashRebate: fields.cashRebate,
+      anthonysCars: fields.anthonysCars,
+      first14DaysSyndication: fields.first14DaysSyndication,
+      holdOnTrades: fields.holdOnTrades,
+      totalPayout,
+    });
+    res.status(200).json({ ok: true, totalPayout });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
